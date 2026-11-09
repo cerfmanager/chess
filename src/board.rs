@@ -122,6 +122,13 @@ pub struct BoardState {
     halfmove_clock: u32,
 }
 
+pub struct Attacks {
+    knight_attacks: [u64; 64],
+    white_pawn_attacks: [u64; 64],
+    black_pawn_attacks: [u64; 64],
+    king_attacks: [u64; 64],
+}
+
 impl BoardState {
     fn get_pawns(&mut self, color: Color) -> u64 {
         match color {
@@ -175,6 +182,13 @@ pub fn main() {
         move_number: 1,
         halfmove_clock: 0,
     };
+
+    let leaper_attacks = Attacks {
+        knight_attacks : build_knights_table(),
+        king_attacks: build_king_table(),
+        white_pawn_attacks:build_white_pawn(),
+        black_pawn_attacks:build_black_pawn(),
+    }
 
     println!("{}", board_state.white.pawn.count_ones());
     println!("{}", fen_parse(&board_state));
@@ -252,64 +266,81 @@ fn board_printer(board: &BoardState) {
     }
 }
 
-fn knight_attacks(board: &Board) -> u64 {
-    let knight_attack: u64 = {
-        board.knight << 8 * 2 + 1
-            | board.knight << 8 * 2 - 1
-            | board.knight >> 8 * 2 + 1
-            | board.knight >> 8 * 2 - 1
-            | board.knight >> 2 + 8
-            | board.knight >> 2 - 8
-            | board.knight << 2 + 8
-            | board.knight << 2 - 8
-                & NOT_AB_FILE
-                & NOT_A_FILE
-                & NOT_GH_FILE
-                & NOT_H_FILE
-                & !all_pieces(board)
-    };
-    knight_attack
+fn knight_attacks(knights: u64) -> u64 {
+    let l1 = (knights >> 1) & NOT_H_FILE;
+    let l2 = (knights >> 2) & NOT_GH_FILE;
+    let r1 = (knights << 1) & NOT_A_FILE;
+    let r2 = (knights << 2) & NOT_AB_FILE;
+    let h1 = l1 | r1;
+    let h2 = l2 | r2;
+    (h1 << 16) | (h1 >> 16) | (h2 << 8) | (h2 >> 8)
 }
 
-fn pawn_attacks(board: &Board, color: Color) -> u64 {
-    match color {
-        Color::White => {
-            let pawn_attack: u64 = {
-                (board.pawn << 8 + 1 | board.pawn << 8 - 1)
-                    & NOT_A_FILE
-                    & NOT_H_FILE
-                    & !all_pieces(board)
-            };
-            pawn_attack
-        }
-        Color::Black => {
-            let pawn_attack: u64 = {
-                (board.pawn >> 8 + 1 | board.pawn >> 8 - 1)
-                    & NOT_A_FILE
-                    & NOT_H_FILE
-                    & !all_pieces(board)
-            };
-            pawn_attack
-        }
+fn pawn_attacks_white(pawns: u64) -> u64 {
+    ((pawns << 9) & NOT_A_FILE) | ((pawns << 7) & NOT_H_FILE)
+}
+fn pawn_attacks_black(pawns: u64) -> u64 {
+    ((pawns >> 7) & NOT_A_FILE) | ((pawns >> 9) & NOT_H_FILE)
+}
+
+
+fn king_attacks(king: u64) -> u64 {
+    let l = (king >> 1) & NOT_H_FILE;
+    let r = (king << 1) & NOT_A_FILE;
+    let row = king | l | r;
+    (row << 8) | (row >> 8) | l | r
+}
+
+fn rook_attacks(rook:u64)->u64{
+    let mut attacked = 0u64;
+    for moved_sq in 1..8{
+        attacked = attacked | rook << (moved_sq * 8);
+        attacked = attacked | rook >> (moved_sq * 8);
+        attacked = attacked | (rook << (moved_sq)) & NOT_A_FILE;
+        attacked = attacked | (rook << (moved_sq)) & NOT_H_FILE;
     }
+
+    attacked
 }
 
-fn king_attack(board: &Board) -> u64 {
-    let king_attack = {
-        (board.king << 8
-            | board.king >> 8
-            | board.king << 1
-            | board.king >> 1
-            | board.king << 8 + 1
-            | board.king << 8 - 1
-            | board.king >> 8 + 1
-            | board.king >> 8 - 1)
-            & NOT_A_FILE
-            & NOT_H_FILE
-            & !all_pieces(board)
-    };
-    king_attack
+fn bishop_attacks(bishop:u64)->u64{
+    let mut attacked = 0u64;
+    for moved_sq in 1..8{
+        attacked = attacked |( bishop << 9 * moved_sq )& NOT_A_FILE ;
+        attacked = attacked |( bishop << 7 * moved_sq) & NOT_H_FILE;
+        attacked = attacked | (bishop >> 7*moved_sq)  & NOT_A_FILE;
+        attacked = attacked | (bishop >>9* moved_sq) & NOT_H_FILE;
+    }
+
+    attacked
 }
 
-// 0 1 2 3 4 5 6 7
-// 8 9 10 11 12 13 14
+fn build_knights_table() -> [u64; 64] {
+    let mut t = [0u64; 64];
+    for sq in 0..64 {
+        t[sq] = knight_attacks(1u64 << sq)
+    }
+    t
+}
+
+fn build_king_table() -> [u64; 64] {
+    let mut t = [0u64; 64];
+    for sq in 0..64 {
+        t[sq] = king_attacks(1u64 << sq)
+    }
+    t
+}
+fn build_white_pawn() -> [u64; 64] {
+    let mut t = [0u64; 64];
+    for sq in 0..64 {
+        t[sq] = pawn_attacks_white(1u64 << sq)
+    }
+    t
+}
+fn build_black_pawn() -> [u64; 64] {
+    let mut t = [0u64; 64];
+    for sq in 0..64 {
+        t[sq] = pawn_attacks_black(1u64 << sq)
+    }
+    t
+}
